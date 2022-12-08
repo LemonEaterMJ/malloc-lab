@@ -73,7 +73,7 @@ team_t team = {
 
 /* private global variables */
 static char *heap_listp;        // ptr that always points to prologue blk ftr
-char *search_bp;                // ptr for next fit 
+char *search_bp = NULL;                // ptr for next fit 
 
 /* function declaration */
 static void *extend_heap(size_t);
@@ -99,7 +99,7 @@ int mm_init(void) {
     } 
 
     /* init for NEXT FIT allocator */
-    search_bp = heap_listp;
+    search_bp = (char *)heap_listp;
 
     /* set additional blks for convenience */
     PUT(heap_listp, 0);                         // Alignment padding
@@ -134,7 +134,7 @@ static void *extend_heap(size_t size) {
 
     /* set brk ptr & bp */
     if((long)(bp = mem_sbrk(newSize)) == -1) {
-        return -1;
+        return (void *)-1;
     } 
 
     /* initialize new free blk */
@@ -192,6 +192,7 @@ static void *coalesce(void *bp) {
 
     /* coalesce by case */
     if (prev_alloc && next_alloc) {         // prev & next allocated
+        search_bp = bp;
         return bp;
 
     } else if (prev_alloc && !next_alloc) { // only next is free
@@ -218,6 +219,8 @@ static void *coalesce(void *bp) {
         bp = PREV_BLKP(bp);
 
     } 
+
+    search_bp = bp;     // next fit
     return bp;
 }
 
@@ -253,6 +256,7 @@ void *mm_malloc(size_t size) {
     /* Search free list for a fit */
     if ((bp = find_fit(newSize)) != NULL) {
         place(bp, newSize);
+        search_bp = bp;
         return bp;
     }
 
@@ -263,6 +267,7 @@ void *mm_malloc(size_t size) {
         return NULL;
     }
     place(bp, newSize);
+    search_bp = bp;
     return bp;
 }
 
@@ -319,7 +324,7 @@ void *mm_realloc(void *ptr, size_t size) {
  * 
  */
 static void *find_fit(size_t size) {
-    void *bp;
+    char *bp;
     
     /************** FIRST FIT Score : 58****************/
     // for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
@@ -330,25 +335,37 @@ static void *find_fit(size_t size) {
     // return NULL;    // no fit 
 
     /************** NEXT FIT Segmentation fault*****************/
-    // for (search_bp; GET_SIZE(HDRP(search_bp)) > 0; 
-    // search_bp = NEXT_BLKP(search_bp)) {
-    //     if (!GET_ALLOC(HDRP(search_bp)) && (size <= GET_SIZE(HDRP(search_bp)))) {
-    //         return search_bp;
-    //     }
-    // }
-    // return NULL;    // no fit, search_bp is at epilogue header
-
-    /************** BEST FIT score : 57*****************/
-    size_t min = 4294967295;        // TODO : 추후 수정할것 
-    void *temp = NULL;              // return NULL if no fit
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (size <= GET_SIZE(HDRP(bp))) 
-        && (min > GET_SIZE(HDRP(bp)))) {
-            min = GET_SIZE(HDRP(bp));
-            temp = bp;
+    for (bp = search_bp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (size <= GET_SIZE(HDRP(bp)))) {
+            search_bp = bp;
+            return bp;
         }
     }
-    return temp;    
+
+    bp = heap_listp;
+    while (bp < search_bp) {
+        bp = NEXT_BLKP(bp);
+        if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= size) {
+            search_bp = bp;
+            return bp;
+        }
+    }
+
+
+    
+    return NULL;    // no fit, search_bp is at epilogue header
+
+    /************** BEST FIT score : 57*****************/
+    // size_t min = 4294967295;        // TODO : 추후 수정할것 
+    // void *temp = NULL;              // return NULL if no fit
+    // for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+    //     if (!GET_ALLOC(HDRP(bp)) && (size <= GET_SIZE(HDRP(bp))) 
+    //     && (min > GET_SIZE(HDRP(bp)))) {
+    //         min = GET_SIZE(HDRP(bp));
+    //         temp = bp;
+    //     }
+    // }
+    // return temp;    
 }
 
 
@@ -382,7 +399,6 @@ int place(void *bp, size_t size) {
 
     return -1;
 }
-
 
 
 
